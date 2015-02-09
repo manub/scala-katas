@@ -13,13 +13,26 @@ object PokerHands {
         (Hand(cardsBlackPlayer), Hand(cardsWhitePlayer))
     }
 
-    val (blackHigherScore, blackWinningValue) = blackHand.higherScore
-    val (whiteHigherScore, whiteWinningValue) = whiteHand.higherScore
+    // the following code could be better IMHO - candidate for a refactoring
+    val (blackHigherScore, blackHigherCardValue) = blackHand.higherScore
+    val (whiteHigherScore, whiteHigherCardValue) = whiteHand.higherScore
 
-    if (blackHigherScore > whiteHigherScore || (blackHigherScore == whiteHigherScore && blackWinningValue > whiteWinningValue)) {
-      GameOutcome(Black, s"${blackHigherScore.name}: ${blackWinningValue.name}")
+    def blackHasAnHigherScore: Boolean = {
+      blackHigherScore > whiteHigherScore
+    }
+
+    def scoresAreTied: Boolean = {
+      blackHigherScore == whiteHigherScore
+    }
+
+    def blackHasAnHigherCardValue: Boolean = {
+      blackHigherCardValue > whiteHigherCardValue
+    }
+
+    if (blackHasAnHigherScore || (scoresAreTied && blackHasAnHigherCardValue)) {
+      GameOutcome(Black, s"${blackHigherScore.name}: ${blackHigherCardValue.name}")
     } else {
-      GameOutcome(White, s"${whiteHigherScore.name}: ${whiteWinningValue.name}")
+      GameOutcome(White, s"${whiteHigherScore.name}: ${whiteHigherCardValue.name}")
     }
   }
 
@@ -46,7 +59,16 @@ trait Score extends Ordered[Score] {
 }
 
 object Scores {
-  lazy val all = Seq(HIGHER_CARD, PAIR, TWO_OF_A_KIND, THREE_OF_A_KIND)
+  lazy val all = Seq(
+    HIGHER_CARD,
+    PAIR,
+    TWO_OF_A_KIND,
+    THREE_OF_A_KIND,
+    STRAIGHT,
+    FLUSH,
+    FULL_HOUSE,
+    FOUR_OF_A_KIND,
+    STRAIGHT_FLUSH)
 }
 
 case object HIGHER_CARD extends Score {
@@ -66,9 +88,9 @@ case object PAIR extends Score {
 case object TWO_OF_A_KIND extends Score {
 
   override def matches(hand: Hand): Option[Value] = for {
-      maximumValuePresentInFirstPair <- maximumValueWithAtLeastOccurrences(hand.cards, 2)
-      maximumValuePresentInSecondPair <- maximumValueWithAtLeastOccurrences(hand.cards.filterNot(card => card.value == maximumValuePresentInFirstPair), 2)
-    } yield maximumValuePresentInFirstPair
+    maximumValuePresentInFirstPair <- maximumValueWithAtLeastOccurrences(hand.cards, 2)
+    maximumValuePresentInSecondPair <- maximumValueWithAtLeastOccurrences(hand.cards.filterNot(card => card.value == maximumValuePresentInFirstPair), 2)
+  } yield maximumValuePresentInFirstPair
 
   override def name: String = "Two of a Kind"
 }
@@ -78,6 +100,44 @@ case object THREE_OF_A_KIND extends Score {
   override def matches(hand: Hand) = maximumValueWithAtLeastOccurrences(hand.cards, 3)
 
   override def name: String = "Three of a Kind"
+}
+
+object STRAIGHT extends Score {
+  override def matches(hand: Hand) =
+    if (Value.order.containsSlice(hand.cards.map(_.value))) Some(hand.higherCard.value) else None
+
+  override def name: String = "Straight"
+}
+
+object FLUSH extends Score {
+  override def matches(hand: Hand) =
+    if (hand.cards.groupBy(_.suit).size == 1) Some(hand.higherCard.value) else None
+
+  override def name: String = "Flush"
+}
+
+object FULL_HOUSE extends Score {
+  override def matches(hand: Hand) = for {
+    threeOfAKind <- maximumValueWithAtLeastOccurrences(hand.cards, 3)
+    pair <- maximumValueWithAtLeastOccurrences(hand.cards.filterNot(_.value == threeOfAKind), 2)
+  } yield threeOfAKind
+
+  override def name: String = "Full House"
+}
+
+object FOUR_OF_A_KIND extends Score {
+  override def matches(hand: Hand) = maximumValueWithAtLeastOccurrences(hand.cards, 4)
+
+  override def name = "Four of a Kind"
+}
+
+object STRAIGHT_FLUSH extends Score {
+  override def matches(hand: Hand) = for {
+    straight <- STRAIGHT.matches(hand)
+    flush <- FLUSH.matches(hand)
+  } yield straight
+
+  override def name = "Straight Flush"
 }
 
 trait Player {
@@ -100,7 +160,7 @@ case class Hand(cards: Seq[Card]) {
     Scores.all
       .reverse
       .map(score => (score, score.matches(this)))
-      .filter { case (score, maybeMatched) => maybeMatched.isDefined }
+      .filter { case (score, maybeMatched) => maybeMatched.isDefined}
       .map { case (score, matched) => (score, matched.get)}
       .head
   }
@@ -177,11 +237,8 @@ object Suit {
 }
 
 case object HEARTS extends Suit("Hearts")
-
 case object DIAMONDS extends Suit("Diamonds")
-
 case object CLUBS extends Suit("Clubs")
-
 case object SPADES extends Suit("Spades")
 
 case class GameOutcome(winner: Player, hand: String)
